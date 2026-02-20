@@ -462,3 +462,370 @@ Fa0/1 → PC7 Fa0 (access VLAN 87)
 - 🔄 = Cross-link horizontal (redundancia STP entre switches de la misma capa)
 - ⚡ = Dual-uplink (access switch con 2 caminos hacia arriba — STP gestiona redundancia)
 - 🔒 = Requiere Port-Security (VLAN Básicos: máx 1 MAC, violation shutdown)
+
+
+# Router0 (Edificio Izquierdo - EIGRP)
+```
+enable
+configure terminal
+hostname Router0
+!
+! Configuración Enlace WAN a Central
+interface GigabitEthernet0/0
+ description Conexion a Router1 (WAN)
+ ip address 10.10.10.1 255.255.255.0
+ no shutdown
+!
+! Configuración Router-on-a-Stick (LAN Izquierda)
+interface GigabitEthernet0/1
+ no shutdown
+!
+interface GigabitEthernet0/1.17
+ description Gateway VLAN 17 Primaria
+ encapsulation dot1Q 17
+ ip address 192.178.17.1 255.255.255.0
+!
+interface GigabitEthernet0/1.27
+ description Gateway VLAN 27 Basicos
+ encapsulation dot1Q 27
+ ip address 192.178.27.1 255.255.255.0
+!
+interface GigabitEthernet0/1.37
+ description Gateway Gateway VLAN 37 Bachillerato
+ encapsulation dot1Q 37
+ ip address 192.178.37.1 255.255.255.0
+!
+! Configuración Enrutamiento EIGRP
+router eigrp 7
+ network 10.10.10.0 0.0.0.255
+ network 192.178.17.0 0.0.0.255
+ network 192.178.27.0 0.0.0.255
+ network 192.178.37.0 0.0.0.255
+ no auto-summary
+!
+! Redistribución para conectar con RIP
+router rip
+ version 2
+ network 10.10.10.0
+ no auto-summary
+ redistribute eigrp 7 metric 1
+! 
+! Volvemos a EIGRP para redistribuir RIP hacia adentro
+router eigrp 7
+ redistribute rip metric 10000 100 255 1 1500
+```
+
+# Router1 (Central 1 - RIP)
+```
+enable
+configure terminal
+hostname Router1
+!
+interface GigabitEthernet0/0
+ description Conexion a Router0
+ ip address 10.10.10.2 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description Conexion a Router2
+ ip address 10.10.9.1 255.255.255.0
+ no shutdown
+!
+router rip
+ version 2
+ network 10.10.10.0
+ network 10.10.9.0
+ no auto-summary
+ ```
+
+# Router2 (Central 2 - RIP)
+ ```
+enable
+configure terminal
+hostname Router2
+!
+interface GigabitEthernet0/0
+ description Conexion a Router1
+ ip address 10.10.9.2 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ description Conexion a Router3
+ ip address 10.10.8.1 255.255.255.0
+ no shutdown
+!
+router rip
+ version 2
+ network 10.10.9.0
+ network 10.10.8.0
+ no auto-summary
+  ```
+
+# Router3 (Edificio Derecho - OSPF)
+ ```
+enable
+configure terminal
+hostname Router3
+!
+interface GigabitEthernet0/0
+ description Conexion a Router2 (WAN)
+ ip address 10.10.8.2 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ no shutdown
+!
+interface GigabitEthernet0/1.67
+ description Gateway VLAN 67 Primaria
+ encapsulation dot1Q 67
+ ip address 192.178.67.1 255.255.255.0
+!
+interface GigabitEthernet0/1.77
+ description Gateway VLAN 77 Basicos
+ encapsulation dot1Q 77
+ ip address 192.178.77.1 255.255.255.0
+!
+interface GigabitEthernet0/1.87
+ description Gateway VLAN 87 Bachillerato
+ encapsulation dot1Q 87
+ ip address 192.178.87.1 255.255.255.0
+!
+! Configuración OSPF (Area 0)
+router ospf 1
+ network 10.10.8.0 0.0.0.255 area 0
+ network 192.178.67.0 0.0.0.255 area 0
+ network 192.178.77.0 0.0.0.255 area 0
+ network 192.178.87.0 0.0.0.255 area 0
+!
+! Redistribución OSPF <-> RIP
+router rip
+ version 2
+ network 10.10.8.0
+ redistribute ospf 1 metric 1
+!
+router ospf 1
+ redistribute rip subnets
+ ```
+
+
+
+
+## Switch0 (Servidor VTP y Core Izquierdo)
+Este switch crea las VLANs y las propaga hacia abajo. 
+ ```
+enable
+configure terminal
+hostname SW0_G7
+enable secret redes2grupo7
+vtp domain G7
+vtp mode server
+vtp password redes2grupo7
+vlan 17
+ name Primaria
+vlan 27
+ name Basicos
+vlan 37
+ name Bachillerato
+exit
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface range FastEthernet0/1-3
+ switchport mode trunk
+  ```
+
+## Switches de Distribución (Capa 2 y 3)
+Estos switches son clientes VTP y solo configuran puertos troncales para dejar pasar todas las VLANs 
+
+## Switch1
+
+ ```
+enable
+configure terminal
+hostname SW1_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface range FastEthernet0/1-2
+ switchport mode trunk
+  ```
+
+## Switch2
+
+ ```
+enable
+configure terminal
+hostname SW2_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface FastEthernet0/1
+ switchport mode trunk
+  ```
+
+## Switch3
+
+ ```
+enable
+configure terminal
+hostname SW3_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface range FastEthernet0/1-2
+ switchport mode trunk
+
+  ```
+
+## Switch4
+
+ ```
+enable
+configure terminal
+hostname SW4_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface range FastEthernet0/1-3
+ switchport mode trunk
+ ```
+
+## Switch5 (Hub Central Izquierdo - Muchas conexiones)
+
+ ```
+enable
+configure terminal
+hostname SW5_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface range GigabitEthernet0/1-2
+ switchport mode trunk
+interface range FastEthernet0/1-8
+ switchport mode trunk
+ ```
+
+## Switch6
+
+ ```
+enable
+configure terminal
+hostname SW6_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface range FastEthernet0/1-3
+ switchport mode trunk
+  ```
+
+## Switches de Acceso (Conectan a las PCs)
+Aquí asignamos las VLANs a los puertos FastEthernet0/1 y aplicamos la seguridad donde corresponde.
+
+## Switch7 (VLAN 17 - Primaria)
+
+ ```
+enable
+configure terminal
+hostname SW7_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface range GigabitEthernet0/1-2
+ switchport mode trunk
+interface FastEthernet0/1
+ switchport mode access
+ switchport access vlan 17
+ ```
+
+## Switch8 (VLAN 27 - Básicos + Seguridad) 
+
+ ```
+enable
+configure terminal
+hostname SW8_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface range GigabitEthernet0/1-2
+ switchport mode trunk
+interface FastEthernet0/1
+ switchport mode access
+ switchport access vlan 27
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+ ```
+
+## Switch9 (VLAN 27 - Básicos + Seguridad) 
+
+ ```
+enable
+configure terminal
+hostname SW9_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface GigabitEthernet0/1
+ switchport mode trunk
+interface FastEthernet0/1
+ switchport mode access
+ switchport access vlan 27
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security mac-address sticky
+ switchport port-security violation shutdown
+  ```
+
+## Switch10 (VLAN 37 - Bachillerato)
+
+ ```
+enable
+configure terminal
+hostname SW10_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface range GigabitEthernet0/1-2
+ switchport mode trunk
+interface FastEthernet0/1
+ switchport mode access
+ switchport access vlan 37
+  ```
+
+## Switch11 (VLAN 37 - Bachillerato)
+
+ ```
+enable
+configure terminal
+hostname SW11_G7
+vtp domain G7
+vtp mode client
+vtp password redes2grupo7
+spanning-tree mode pvst
+interface range GigabitEthernet0/1-2
+ switchport mode trunk
+interface FastEthernet0/1
+ switchport mode access
+ switchport access vlan 37
+  ```
